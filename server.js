@@ -5,11 +5,15 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
-const DB_FILE = './database.json';
+const PORT = process.env.PORT || 3000; // Wichtig für Render: Nutzt den Port, den Render vorgibt!
 
 app.use(bodyParser.json());
 app.use(express.static(__dirname));
+
+// WICHTIG: Explizite Weiterleitung für die Startseite
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 app.use(session({
     secret: 'tbr-rem-secure-secret-key-1985',
@@ -18,7 +22,7 @@ app.use(session({
     cookie: { secure: false }
 }));
 
-if (!fs.existsSync(DB_FILE)) {
+if (!fs.existsSync('./database.json')) {
     const initialData = {
         users: [
             { id: 1, username: "Christian", pass: "123", name: "Christian", role: "office", protected: true },
@@ -26,16 +30,15 @@ if (!fs.existsSync(DB_FILE)) {
             { id: 3, username: "fahrer2", pass: "123", name: "Stefan Weber", role: "driver" }
         ],
         bins: [
-            { id: 1, code: "PB-RS-001", lat: 51.1805, lng: 7.1882, vol: 50, zustand: "Gut / Intakt", adr: "Alleestraße 54", geleertHeute: false, gesammelt: 0 },
-            { id: 2, code: "PB-RS-002", lat: 51.1788, lng: 7.1925, vol: 80, zustand: "Gut / Intakt", adr: "Theodor-Heuss-Platz (Rathaus)", geleertHeute: false, gesammelt: 0 }
+            { id: 1, code: "PB-RS-001", lat: 51.1805, lng: 7.1882, vol: 50, zustand: "Gut / Intakt", adr: "Alleestraße 54", geleertHeute: false, gesammelt: 0 }
         ],
         tours: []
     };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
+    fs.writeFileSync('./database.json', JSON.stringify(initialData, null, 2));
 }
 
-const getDB = () => JSON.parse(fs.readFileSync(DB_FILE));
-const saveDB = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+const getDB = () => JSON.parse(fs.readFileSync('./database.json'));
+const saveDB = (data) => fs.writeFileSync('./database.json', JSON.stringify(data, null, 2));
 
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
@@ -69,7 +72,6 @@ app.post('/api/data', (req, res) => {
     let incomingData = req.body;
     let currentDb = getDB();
     
-    // SICHERHEIT: Garantieren, dass der geschützte Admin "Christian" niemals entfernt werden kann
     let protectedUser = currentDb.users.find(u => u.username.toLowerCase() === 'christian' || u.protected);
     if (protectedUser) {
         let exists = incomingData.users.some(u => u.username.toLowerCase() === 'christian' || u.protected);
@@ -83,5 +85,5 @@ app.post('/api/data', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server läuft auf http://localhost:${PORT}`);
+    console.log(`Server läuft auf Port ${PORT}`);
 });
