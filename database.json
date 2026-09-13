@@ -1,0 +1,51 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "Christian",
+      "pass": "123",
+      "name": "Christian",
+      "role": "office",
+      "protected": true
+    },
+    {
+      "id": 2,
+      "username": "fahrer1",
+      "pass": "123",
+      "name": "Klaus Müller",
+      "role": "driver"
+    },
+    {
+      "id": 3,
+      "username": "fahrer2",
+      "pass": "123",
+      "name": "Stefan Weber",
+      "role": "driver"
+    }
+  ],
+  "bins": [
+    {
+      "id": 1,
+      "code": "PB-RS-001",
+      "lat": 51.1805,
+      "lng": 7.1882,
+      "vol": 50,
+      "zustand": "Gut / Intakt",
+      "adr": "Alleestraße 54",
+      "geleertHeute": false,
+      "gesammelt": 0
+    },
+    {
+      "id": 2,
+      "code": "PB-RS-002",
+      "lat": 51.1788,
+      "lng": 7.1925,
+      "vol": 80,
+      "zustand": "Gut / Intakt",
+      "adr": "Theodor-Heuss-Platz (Rathaus)",
+      "geleertHeute": false,
+      "gesammelt": 0
+    }
+  ],
+  "tours": []
+}

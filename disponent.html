@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Papierkorb Management - Disponenten-Zentrale</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root { --tbr-dark: #0f172a; --tbr-primary: #2563eb; }
+        body { background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; color: #334155; }
+        .navbar-tbr { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-bottom: 2px solid var(--tbr-primary); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .sidebar { width: 260px; background: #ffffff; border-right: 1px solid #e2e8f0; min-height: calc(100vh - 56px); }
+        .sidebar .nav-link { color: #64748b; font-size: 0.9rem; font-weight: 500; padding: 11px 16px; border-radius: 8px; margin-bottom: 6px; cursor: pointer; transition: all 0.2s; }
+        .sidebar .nav-link:hover { background-color: #f1f5f9; color: #0f172a; }
+        .sidebar .nav-link.active { background-color: #eff6ff; color: var(--tbr-primary); font-weight: 600; }
+        .map-wrapper { position: relative; width: 100%; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        #map { height: calc(100vh - 140px); width: 100%; z-index: 1; }
+        .map-wrapper:fullscreen, .map-wrapper:-webkit-full-screen { width: 100vw !important; height: 100vh !important; border-radius: 0 !important; }
+        .map-wrapper:fullscreen #map, .map-wrapper:-webkit-full-screen #map { height: 100vh !important; width: 100vw !important; }
+        .layer-switch-box { position: absolute; top: 14px; right: 14px; z-index: 1000; background: white; padding: 4px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; border: 1px solid #e2e8f0; }
+        .layer-switch-box button { border: none; background: transparent; font-size: 0.8rem; font-weight: 600; padding: 6px 14px; border-radius: 6px; color: #64748b; cursor: pointer; transition: all 0.15s; }
+        .layer-switch-box button.active { background-color: var(--tbr-primary); color: white; }
+        .fullscreen-btn-control { position: absolute; bottom: 20px; right: 14px; z-index: 1000; background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 0.82rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; }
+        .panel-box { background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); margin-bottom: 1rem; }
+        .modal-checklist { max-height: 250px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px; background: #f8f9fa; }
+        .toast-container-custom { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+    </style>
+</head>
+<body>
+
+<div class="toast-container-custom" id="toastContainer"></div>
+
+<nav class="navbar navbar-dark navbar-tbr px-3 py-2 shadow-sm">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-trash3-fill text-warning fs-5 me-2"></i>
+        <span class="navbar-brand mb-0 h1 fw-bold fs-6">Papierkorb Management – Betriebs- und Leitsystem Remscheid</span>
+    </div>
+
+    <div class="d-flex align-items-center gap-3">
+        <span class="text-white small">
+            <i class="bi bi-person-check-fill text-success me-1"></i> Disponent: <strong id="lblUserName">Christian</strong>
+        </span>
+        <a href="fahrer.html" target="_blank" class="btn btn-outline-info btn-sm fw-semibold">
+            <i class="bi bi-phone me-1"></i> Fahrer-App ↗
+        </a>
+        <button class="btn btn-sm btn-outline-warning fw-semibold" onclick="exportDataCSV()">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> CSV-Export
+        </button>
+        <button class="btn btn-sm btn-outline-danger fw-semibold" onclick="logout()">
+            <i class="bi bi-box-arrow-right me-1"></i> Abmelden
+        </button>
+    </div>
+</nav>
+
+<div class="container-fluid p-0">
+    <div class="d-flex">
+        <div class="sidebar p-3 d-flex flex-column">
+            <div class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 py-2 mb-3 text-start fw-semibold">
+                <i class="bi bi-shield-check me-1"></i> System Online (DB)
+            </div>
+            <ul class="nav flex-column mb-auto">
+                <li class="nav-item"><a class="nav-link active" id="tabLinkMap" onclick="switchTab('map')"><i class="bi bi-geo-alt me-2"></i> Stadtkarte & Kataster</a></li>
+                <li class="nav-item"><a class="nav-link" id="tabLinkTours" onclick="switchTab('tours')"><i class="bi bi-diagram-3 me-2"></i> Aktuelle Touren</a></li>
+                <li class="nav-item"><a class="nav-link" id="tabLinkStats" onclick="switchTab('stats')"><i class="bi bi-bar-chart-line me-2"></i> Betriebs-Statistik</a></li>
+                <li class="nav-item border-top mt-2 pt-2"><a class="nav-link text-primary fw-bold" id="tabLinkUsers" onclick="switchTab('users')"><i class="bi bi-person-gear me-2"></i> Mitarbeiterverwaltung</a></li>
+            </ul>
+            <div class="pt-3 border-top mt-3">
+                <button class="btn btn-outline-secondary btn-sm w-100 fw-semibold" onclick="resetDailyOperations()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Tagesstatus zurücksetzen
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-grow-1 p-3">
+            <!-- TAB 1: KARTE -->
+            <div id="contentMap">
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="panel-box p-2 mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div><span class="fw-bold small text-secondary px-2"><i class="bi bi-map me-1 text-primary"></i> GEOGRAFISCHES KATASTER REMSCHEID</span></div>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary active" onclick="filterMap('all', this)">Alle (<span id="cntAll">0</span>)</button>
+                                <button class="btn btn-outline-primary" onclick="filterMap('normal', this)">Standard</button>
+                                <button class="btn btn-outline-success" onclick="filterMap('120', this)">120L</button>
+                                <button class="btn btn-outline-danger" onclick="filterMap('damage', this)">Defekt</button>
+                            </div>
+                        </div>
+
+                        <div class="map-wrapper" id="mapWrapperBox">
+                            <div class="layer-switch-box">
+                                <button id="btnBaseStreet" class="active" onclick="setMapBaseLayer('street')"><i class="bi bi-map me-1"></i>Karte</button>
+                                <button id="btnBaseSat" onclick="setMapBaseLayer('sat')"><i class="bi bi-globe me-1"></i>Satellit</button>
+                            </div>
+                            <div id="map"></div>
+                            <button class="fullscreen-btn-control" onclick="toggleMapFullscreen()"><i class="bi bi-arrows-fullscreen"></i> Vollbild</button>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        <div class="panel-box p-3 border-top border-success border-4">
+                            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                                <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-trash3 text-success me-1"></i> Papierkorb-Verwaltung</h6>
+                                <span class="badge bg-secondary" id="curCodeBadge">Auswählen</span>
+                            </div>
+                            <button class="btn btn-success btn-sm w-100 fw-bold mb-3 shadow-sm" id="btnDisponentAddBin" onclick="toggleDisponentAddMode()">
+                                <i class="bi bi-plus-circle me-1"></i> ➕ Neuen Korb auf Karte platzieren
+                            </button>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6"><label class="small text-muted mb-0">Kennung</label><input type="text" class="form-control form-control-sm fw-bold" id="inpCode" placeholder="PB-RS-001"></div>
+                                <div class="col-6"><label class="small text-muted mb-0">Volumen (L)</label><input type="number" class="form-control form-control-sm" id="inpVolumen" value="50"></div>
+                            </div>
+                            <div class="mb-3"><label class="small text-muted mb-0">Standort / Straße</label><input type="text" class="form-control form-control-sm" id="inpAdresse" placeholder="Straße und Hausnummer"></div>
+                            <div class="row g-2">
+                                <div class="col-6"><button class="btn btn-outline-success btn-sm w-100 fw-bold" onclick="saveCurrentBin()"><i class="bi bi-floppy me-1"></i> Speichern</button></div>
+                                <div class="col-6"><button class="btn btn-outline-danger btn-sm w-100 fw-bold" onclick="deleteCurrentBin()"><i class="bi bi-trash me-1"></i> Löschen</button></div>
+                            </div>
+                        </div>
+
+                        <div class="panel-box p-3 bg-light border">
+                            <h6 class="fw-bold text-dark small mb-1"><i class="bi bi-info-circle text-primary me-1"></i> Betriebsleitfaden</h6>
+                            <p class="text-muted small mb-0">Klicken Sie auf einen Marker im Kataster, um Stammdaten zu bearbeiten. Nutzen Sie den Platzierungsmodus, um neue Behälter georeferenziert einzupflegen.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: TOUREN -->
+            <div id="contentTours" style="display: none;">
+                <div class="panel-box p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-diagram-3 text-primary me-2"></i>Aktuelle Tagestouren</h5>
+                        <button class="btn btn-success btn-sm fw-bold px-3 py-2 shadow-sm" onclick="openTourModal()">
+                            <i class="bi bi-plus-circle-fill me-1"></i> ➕ Tour erstellen
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr><th>Tour-Name</th><th>Zugeordneter Fahrer</th><th>Wegpunkte</th><th>Distanz</th><th>Status</th><th class="text-end">Aktion</th></tr>
+                            </thead>
+                            <tbody id="tblToursBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: STATISTIK -->
+            <div id="contentStats" style="display: none;">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3"><div class="panel-box p-3 text-center">Gesamtbestand: <h3 id="statTotalBins" class="text-primary fw-bold">0</h3></div></div>
+                    <div class="col-md-3"><div class="panel-box p-3 text-center">Geleert heute: <h3 id="statEmptiedToday" class="text-success fw-bold">0</h3></div></div>
+                    <div class="col-md-3"><div class="panel-box p-3 text-center">Gesammelte Menge: <h3 id="statCollectedLiters" class="text-info fw-bold">0 L</h3></div></div>
+                    <div class="col-md-3"><div class="panel-box p-3 text-center">Beschädigt: <h3 id="statDamaged" class="text-danger fw-bold">0</h3></div></div>
+                </div>
+                <div class="panel-box p-4">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart text-primary me-2"></i>Betriebs-Auslastung</h5>
+                    <div class="progress mb-3" style="height: 20px;">
+                        <div class="progress-bar bg-success" id="statProgressBar" role="progressbar" style="width: 0%;">0% Geleert</div>
+                    </div>
+                    <p class="text-muted small mb-0">Die Fortschrittszahl spiegelt den täglichen Leerungsstatus aller im Kataster verzeichneten Behälter wider.</p>
+                </div>
+            </div>
+
+            <!-- TAB 4: MITARBEITER -->
+            <div id="contentUsers" style="display: none;">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="panel-box p-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="fw-bold mb-0">Mitarbeiterliste</h5>
+                                <span class="badge bg-secondary" id="lblUserCount">0 Benutzer</span>
+                            </div>
+                            <table class="table align-middle">
+                                <thead class="table-light">
+                                    <tr><th>Name</th><th>User</th><th>Rolle</th><th class="text-end">Aktion</th></tr>
+                                </thead>
+                                <tbody id="tblUsersBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="panel-box p-4 border-top border-success border-4">
+                            <h5 class="fw-bold mb-3">Neuen Mitarbeiter anlegen</h5>
+                            <form onsubmit="event.preventDefault(); addNewUser();">
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold text-muted mb-0">Vollständiger Name</label>
+                                    <input type="text" class="form-control form-control-sm" id="newUserName" placeholder="z. B. Frank Schneider" required>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold text-muted mb-0">Benutzername (Login)</label>
+                                    <input type="text" class="form-control form-control-sm" id="newUserLogin" placeholder="z. B. fahrer4" required>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small fw-bold text-muted mb-0">Passwort</label>
+                                    <input type="text" class="form-control form-control-sm" id="newUserPass" placeholder="Passwort" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold text-muted mb-0">Rolle</label>
+                                    <select class="form-select form-select-sm" id="newUserRole">
+                                        <option value="driver">Fahrer</option>
+                                        <option value="office">Disponent</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-success btn-sm w-100 fw-bold py-2">Mitarbeiter speichern</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: TOUR ERSTELLEN ODER BEARBEITEN -->
+<div class="modal fade" id="tourModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-diagram-3 me-1"></i> <span id="modalTitleText">Neue Tagestour erstellen</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">Tour-Bezeichnung</label>
+                    <input type="text" class="form-control form-control-sm fw-bold" id="modalTourName" value="Morgen-Tour Innenstadt">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">Zugeordneter Fahrer</label>
+                    <select class="form-select form-select-sm fw-bold" id="modalTourDriver"></select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold text-muted">Wegpunkte / Papierkörbe auswählen:</label>
+                    <div class="modal-checklist" id="modalBinChecklist"></div>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="saveNewTourFromModal()">Tour speichern</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let map = null, markers = [], papierkoerbe = [], tourenListe = [], allUsers = [];
+    let selectedBin = null, currentFilter = 'all', disponentAddMode = false;
+    let googleStreetLayer, googleSatLayer;
+    let tourModalInstance = null;
+    let editingTourId = null;
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toastId = 'toast_' + Date.now();
+        const bgCol = type === 'success' ? 'bg-success text-white' : 'bg-danger text-white';
+        const html = `
+            <div id="${toastId}" class="toast align-items-center ${bgCol} border-0 shadow mb-2" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="d-flex">
+                    <div class="toast-body fw-semibold">${message}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', html);
+        const toastEl = document.getElementById(toastId);
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 3500 });
+        bsToast.show();
+        toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    }
+
+    async function loadDataFromBackend() {
+        try {
+            const res = await fetch('/api/data');
+            if (!res.ok) { window.location.href = 'index.html'; return; }
+            const data = await res.json();
+            papierkoerbe = data.bins || [];
+            tourenListe = data.tours || [];
+            allUsers = data.users || [];
+
+            const sessRes = await fetch('/api/session');
+            const sessData = await sessRes.json();
+            if (sessData.loggedIn && sessData.user) {
+                document.getElementById('lblUserName').innerText = sessData.user.name;
+            }
+
+            renderMarkers();
+            if (papierkoerbe.length > 0 && !selectedBin) selectBin(papierkoerbe[0]);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function saveDataToBackend() {
+        try {
+            await fetch('/api/data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ users: allUsers, bins: papierkoerbe, tours: tourenListe })
+            });
+        } catch (e) {
+            showToast('Fehler beim Speichern in die Datenbank.', 'danger');
+        }
+    }
+
+    async function logout() {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = 'index.html';
+    }
+
+    async function resetDailyOperations() {
+        if (!confirm("Möchten Sie den Tagesstatus aller Papierkörbe (geleert heute / gesammelt) zurücksetzen?")) return;
+        papierkoerbe.forEach(b => {
+            b.geleertHeute = false;
+            b.gesammelt = 0;
+            b.leerung = null;
+        });
+        tourenListe.forEach(t => {
+            t.prozent = 0;
+            t.status = "Zugewiesen";
+        });
+        await saveDataToBackend();
+        renderMarkers();
+        showToast('Tagesstatus erfolgreich zurückgesetzt.');
+    }
+
+    function initMap() {
+        if (map) return;
+        map = L.map('map').setView([51.1802, 7.1885], 15);
+
+        googleStreetLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps' });
+        googleSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps' });
+        googleStreetLayer.addTo(map);
+        
+        map.on('click', (e) => {
+            if (disponentAddMode) {
+                const num = papierkoerbe.length + 1;
+                const code = "PB-RS-" + (num < 10 ? "00" + num : num);
+                const newBin = {
+                    id: Date.now(),
+                    code: code,
+                    lat: Number(e.latlng.lat.toFixed(5)),
+                    lng: Number(e.latlng.lng.toFixed(5)),
+                    vol: Number(document.getElementById('inpVolumen').value) || 80,
+                    zustand: "Gut / Intakt",
+                    adr: document.getElementById('inpAdresse').value || "Neuer Standort",
+                    geleertHeute: false,
+                    gesammelt: 0
+                };
+                papierkoerbe.push(newBin);
+                saveDataToBackend();
+                toggleDisponentAddMode();
+                renderMarkers();
+                selectBin(newBin);
+                showToast(`Papierkorb ${code} erfolgreich platziert!`);
+            }
+        });
+        loadDataFromBackend();
+    }
+
+    function setMapBaseLayer(type) {
+        if (type === 'street') {
+            if (map.hasLayer(googleSatLayer)) map.removeLayer(googleSatLayer);
+            googleStreetLayer.addTo(map);
+            document.getElementById('btnBaseStreet').classList.add('active');
+            document.getElementById('btnBaseSat').classList.remove('active');
+        } else {
+            if (map.hasLayer(googleStreetLayer)) map.removeLayer(googleStreetLayer);
+            googleSatLayer.addTo(map);
+            document.getElementById('btnBaseSat').classList.add('active');
+            document.getElementById('btnBaseStreet').classList.remove('active');
+        }
+    }
+
+    function renderMarkers() {
+        markers.forEach(m => map.removeLayer(m));
+        markers = [];
+        let filtered = papierkoerbe.filter(b => {
+            const vol = Number(b.vol);
+            const isDefekt = b.zustand && (b.zustand.includes('Defekt') || b.zustand.includes('Beschädigt'));
+            if (currentFilter === '120') return vol === 120;
+            if (currentFilter === 'damage') return isDefekt;
+            if (currentFilter === 'normal') return vol !== 120 && !isDefekt;
+            return true;
+        });
+
+        filtered.forEach(bin => {
+            let color = bin.zustand?.includes('Defekt') ? '#dc2626' : (Number(bin.vol) === 120 ? '#059669' : '#2563eb');
+            let m = L.circleMarker([bin.lat, bin.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map);
+            m.bindPopup(`<b>${bin.code}</b><br>${bin.adr}<br>${bin.vol}L • ${bin.zustand}`);
+            m.on('click', () => selectBin(bin));
+            markers.push(m);
+        });
+        document.getElementById('cntAll').innerText = papierkoerbe.length;
+    }
+
+    function selectBin(bin) {
+        selectedBin = bin;
+        document.getElementById('curCodeBadge').innerText = bin.code;
+        document.getElementById('inpCode').value = bin.code;
+        document.getElementById('inpAdresse').value = bin.adr;
+        document.getElementById('inpVolumen').value = bin.vol;
+    }
+
+    async function saveCurrentBin() {
+        if (!selectedBin) return;
+        selectedBin.code = document.getElementById('inpCode').value;
+        selectedBin.adr = document.getElementById('inpAdresse').value;
+        selectedBin.vol = parseInt(document.getElementById('inpVolumen').value) || 50;
+        await saveDataToBackend();
+        renderMarkers();
+        showToast('Änderungen erfolgreich gespeichert!');
+    }
+
+    async function deleteCurrentBin() {
+        if (!selectedBin || !confirm(`Papierkorb ${selectedBin.code} wirklich löschen?`)) return;
+        papierkoerbe = papierkoerbe.filter(b => b.id !== selectedBin.id);
+        await saveDataToBackend();
+        renderMarkers();
+        showToast('Papierkorb gelöscht.', 'danger');
+    }
+
+    function toggleDisponentAddMode() {
+        disponentAddMode = !disponentAddMode;
+        const btn = document.getElementById('btnDisponentAddBin');
+        btn.className = disponentAddMode ? "btn btn-sm btn-warning fw-bold w-100 mb-3 shadow-sm" : "btn btn-sm btn-success fw-bold w-100 mb-3 shadow-sm";
+        btn.innerHTML = disponentAddMode ? "<i class='bi bi-hand-index-thumb me-1'></i> Klick auf Karte setzen!" : "<i class='bi bi-plus-circle me-1'></i> ➕ Neuen Korb auf Karte platzieren";
+        document.getElementById('map').style.cursor = disponentAddMode ? 'crosshair' : '';
+    }
+
+    function filterMap(type, btn) {
+        currentFilter = type;
+        Array.from(btn.parentElement.children).forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        renderMarkers();
+    }
+
+    function openTourModal(tourId = null) {
+        if (!tourModalInstance) tourModalInstance = new bootstrap.Modal(document.getElementById('tourModal'));
+        
+        const titleEl = document.getElementById('modalTitleText');
+        const checklist = document.getElementById('modalBinChecklist');
+        checklist.innerHTML = '';
+        
+        let currentTour = null;
+        if (tourId) {
+            editingTourId = tourId;
+            currentTour = tourenListe.find(t => t.id === tourId);
+            titleEl.innerText = "Tagestour bearbeiten";
+            document.getElementById('modalTourName').value = currentTour.name;
+        } else {
+            editingTourId = null;
+            titleEl.innerText = "Neue Tagestour erstellen";
+            document.getElementById('modalTourName').value = "Morgen-Tour Innenstadt";
+        }
+
+        const driverSelect = document.getElementById('modalTourDriver');
+        driverSelect.innerHTML = '';
+        const drivers = allUsers.filter(u => u.role === 'driver');
+        drivers.forEach(d => {
+            const selected = (currentTour && currentTour.driver === d.username) ? 'selected' : '';
+            driverSelect.innerHTML += `<option value="${d.username}" ${selected}>${d.name} (${d.username})</option>`;
+        });
+        if (drivers.length === 0) {
+            driverSelect.innerHTML = `<option value="">Keine Fahrer verfügbar</option>`;
+        }
+
+        const activeStopIds = currentTour ? currentTour.stops.map(s => s.id) : [];
+        papierkoerbe.forEach(b => {
+            const isChecked = activeStopIds.includes(b.id) ? 'checked' : '';
+            checklist.innerHTML += `
+                <div class="form-check mb-1">
+                    <input class="form-check-input modal-bin-chk" type="checkbox" value="${b.id}" id="mbc_${b.id}" ${isChecked}>
+                    <label class="form-check-label small" for="mbc_${b.id}">
+                        <strong>${b.code}</strong> (${b.vol}L) - ${b.adr}
+                    </label>
+                </div>`;
+        });
+
+        tourModalInstance.show();
+    }
+
+    async function saveNewTourFromModal() {
+        const name = document.getElementById('modalTourName').value.trim() || "Tagestour";
+        const driver = document.getElementById('modalTourDriver').value;
+        
+        if (!driver) {
+            showToast('Bitte wählen Sie einen Fahrer aus.', 'danger');
+            return;
+        }
+
+        const checkedBoxes = document.querySelectorAll('.modal-bin-chk:checked');
+        const selectedStops = [];
+        checkedBoxes.forEach(chk => {
+            const bin = papierkoerbe.find(b => b.id == chk.value);
+            if (bin) selectedStops.push(bin);
+        });
+
+        if (selectedStops.length === 0) {
+            showToast('Bitte wählen Sie mindestens einen Papierkorb für die Tour aus.', 'danger');
+            return;
+        }
+
+        if (editingTourId) {
+            const tour = tourenListe.find(t => t.id === editingTourId);
+            if (tour) {
+                tour.name = name;
+                tour.driver = driver;
+                tour.stops = selectedStops;
+                tour.km = (selectedStops.length * 1.2).toFixed(1) + " km";
+                tour.dauer = (selectedStops.length * 6) + " Min";
+            }
+            editingTourId = null;
+        } else {
+            tourenListe = tourenListe.filter(t => t.driver !== driver);
+            tourenListe.unshift({
+                id: Date.now(),
+                name: name,
+                driver: driver,
+                stops: selectedStops,
+                km: (selectedStops.length * 1.2).toFixed(1) + " km",
+                dauer: (selectedStops.length * 6) + " Min",
+                status: "Zugewiesen",
+                prozent: 0
+            });
+        }
+
+        await saveDataToBackend();
+        tourModalInstance.hide();
+        showToast(`Tour erfolgreich für Fahrer [${driver}] gespeichert!`);
+        if (document.getElementById('contentTours').style.display !== 'none') {
+            renderToursTable();
+        }
+    }
+
+    function switchTab(tab) {
+        document.getElementById('contentMap').style.display = tab === 'map' ? 'block' : 'none';
+        document.getElementById('contentTours').style.display = tab === 'tours' ? 'block' : 'none';
+        document.getElementById('contentStats').style.display = tab === 'stats' ? 'block' : 'none';
+        document.getElementById('contentUsers').style.display = tab === 'users' ? 'block' : 'none';
+
+        document.getElementById('tabLinkMap').className = tab === 'map' ? 'nav-link active' : 'nav-link';
+        document.getElementById('tabLinkTours').className = tab === 'tours' ? 'nav-link active' : 'nav-link';
+        document.getElementById('tabLinkStats').className = tab === 'stats' ? 'nav-link active' : 'nav-link';
+        document.getElementById('tabLinkUsers').className = tab === 'users' ? 'nav-link active text-primary fw-bold' : 'nav-link text-primary fw-bold';
+
+        if (tab === 'map' && map) setTimeout(() => map.invalidateSize(), 150);
+        if (tab === 'tours') renderToursTable();
+        if (tab === 'stats') {
+            const total = papierkoerbe.length;
+            const emptied = papierkoerbe.filter(b => b.geleertHeute).length;
+            const pct = total > 0 ? Math.round((emptied / total) * 100) : 0;
+
+            document.getElementById('statTotalBins').innerText = total;
+            document.getElementById('statEmptiedToday').innerText = emptied;
+            document.getElementById('statCollectedLiters').innerText = papierkoerbe.reduce((a, b) => a + (b.gesammelt || 0), 0) + " L";
+            document.getElementById('statDamaged').innerText = papierkoerbe.filter(b => b.zustand?.includes('Defekt')).length;
+            
+            const bar = document.getElementById('statProgressBar');
+            bar.style.width = pct + "%";
+            bar.innerText = pct + "% Geleert";
+        }
+        if (tab === 'users') renderUsersTable();
+    }
+
+    function renderToursTable() {
+        const tbody = document.getElementById('tblToursBody');
+        tbody.innerHTML = '';
+        if (tourenListe.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">Keine aktiven Touren vorhanden. Klicken Sie auf „Tour erstellen“.</td></tr>`;
+            return;
+        }
+        tourenListe.forEach(t => {
+            const driverObj = allUsers.find(u => u.username === t.driver);
+            const driverName = driverObj ? `${driverObj.name} (${driverObj.username})` : t.driver;
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${t.name}</strong></td>
+                    <td><span class="badge bg-light text-dark border px-2 py-1"><i class="bi bi-person-fill me-1 text-primary"></i>${driverName}</span></td>
+                    <td>${t.stops.length} Wegpunkte</td>
+                    <td>${t.km} (${t.dauer})</td>
+                    <td><span class="badge ${t.prozent === 100 ? 'bg-success' : 'bg-primary'}">${t.status} (${t.prozent}%)</span></td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openTourModal(${t.id})" title="Tour bearbeiten"><i class="bi bi-pencil-square"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteTour(${t.id})" title="Tour löschen"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>`;
+        });
+    }
+
+    async function deleteTour(id) {
+        if (confirm("Tour wirklich löschen?")) {
+            tourenListe = tourenListe.filter(t => t.id !== id);
+            await saveDataToBackend();
+            renderToursTable();
+            showToast('Tour gelöscht.', 'danger');
+        }
+    }
+
+    function renderUsersTable() {
+        const tbody = document.getElementById('tblUsersBody');
+        tbody.innerHTML = '';
+        document.getElementById('lblUserCount').innerText = `${allUsers.length} Benutzer`;
+        allUsers.forEach(u => {
+            const isProtected = u.username.toLowerCase() === 'christian' || u.protected;
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${u.name}</strong> ${isProtected ? '<span class="badge bg-warning text-dark ms-1">System-Admin</span>' : ''}</td>
+                    <td><code>${u.username}</code></td>
+                    <td><span class="badge ${u.role==='office'?'bg-primary':'bg-success'}">${u.role === 'office' ? 'Disponent' : 'Fahrer'}</span></td>
+                    <td class="text-end">
+                        ${isProtected ? '<span class="text-muted small fw-semibold">Geschützt</span>' : `<button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id})"><i class="bi bi-trash"></i></button>`}
+                    </td>
+                </tr>`;
+        });
+    }
+
+    async function addNewUser() {
+        const name = document.getElementById('newUserName').value.trim();
+        const username = document.getElementById('newUserLogin').value.trim().toLowerCase();
+        const pass = document.getElementById('newUserPass').value.trim();
+        const role = document.getElementById('newUserRole').value;
+
+        if (allUsers.some(x => x.username.toLowerCase() === username)) {
+            showToast('Benutzername ist bereits vergeben!', 'danger');
+            return;
+        }
+
+        allUsers.push({ id: Date.now(), username, pass, name, role });
+        await saveDataToBackend();
+        renderUsersTable();
+
+        document.getElementById('newUserName').value = '';
+        document.getElementById('newUserLogin').value = '';
+        document.getElementById('newUserPass').value = '';
+
+        showToast(`Mitarbeiter "${name}" erfolgreich angelegt!`);
+    }
+
+    async function deleteUser(id) {
+        const userToDelete = allUsers.find(x => x.id === id);
+        if (userToDelete && (userToDelete.username.toLowerCase() === 'christian' || userToDelete.protected)) {
+            showToast('Der Haupt-Admin "Christian" kann nicht gelöscht werden!', 'danger');
+            return;
+        }
+
+        if (confirm("Mitarbeiter wirklich löschen?")) {
+            allUsers = allUsers.filter(x => x.id !== id);
+            await saveDataToBackend();
+            renderUsersTable();
+            showToast('Mitarbeiter gelöscht.', 'danger');
+        }
+    }
+
+    function toggleMapFullscreen() {
+        const w = document.getElementById('mapWrapperBox');
+        if (!document.fullscreenElement) w.requestFullscreen();
+        else document.exitFullscreen();
+        setTimeout(() => map.invalidateSize(), 150);
+    }
+
+    function exportDataCSV() {
+        let csv = "Kennung;Strasse;Volumen_L;Zustand;Geleert_Heute;Muell_L\n";
+        papierkoerbe.forEach(b => { csv += `"${b.code}";"${b.adr}";${b.vol};"${b.zustand}";${b.geleertHeute ? 'JA' : 'NEIN'};${b.gesammelt || 0}\n`; });
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `Betriebsbericht_${new Date().toISOString().slice(0,10)}.csv`;
+        link.click();
+        showToast('CSV-Export erfolgreich erstellt.');
+    }
+
+    window.onload = initMap;
+</script>
+</body>
+</html>

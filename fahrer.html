@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Papierkorb Management - Fahrer-App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --app-dark: #0f172a;
+            --app-primary: #2563eb;
+            --app-success: #059669;
+            --app-transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        body { 
+            background-color: #0b0f17; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; 
+            margin: 0; padding: 0; 
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh;
+        }
+        .app-shell { 
+            width: 100%; max-width: 100%; background: #ffffff; height: 100vh; 
+            display: flex; flex-direction: column; position: relative; overflow: hidden;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+        }
+        @media (min-width: 576px) {
+            .app-shell { 
+                max-width: 420px; height: 88vh; max-height: 860px; 
+                border-radius: 40px; border: 10px solid #1e293b; 
+            }
+        }
+        .app-header { 
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
+            color: white; padding: 14px 20px; display: flex; justify-content: space-between; 
+            align-items: center; border-bottom: 2px solid var(--app-primary); flex-shrink: 0; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .app-view {
+            flex-grow: 1; display: none; flex-direction: column; position: relative; overflow: hidden;
+            opacity: 0; transform: translateY(8px); transition: var(--app-transition);
+        }
+        .app-view.active {
+            display: flex; opacity: 1; transform: translateY(0);
+        }
+
+        #screenNav { width: 100%; height: 100%; }
+        #navMap { width: 100%; height: 100%; flex-grow: 1; z-index: 1; }
+        
+        .gmaps-nav-banner {
+            position: absolute; top: 16px; left: 16px; right: 16px;
+            background: rgba(5, 150, 105, 0.95); backdrop-filter: blur(10px); color: white; border-radius: 16px;
+            padding: 14px 18px; box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            z-index: 1000; display: flex; align-items: center; border: 1px solid rgba(255,255,255,0.15);
+        }
+        .gmaps-nav-footer {
+            position: absolute; bottom: 16px; left: 16px; right: 16px;
+            z-index: 1000; display: flex; flex-direction: column; gap: 10px;
+        }
+        .nav-info-box {
+            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 16px; padding: 14px 18px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: flex;
+            justify-content: space-between; align-items: center; border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        .driver-marker-pulse {
+            width: 28px; height: 28px; background: var(--app-primary); border: 3px solid white;
+            border-radius: 50%; box-shadow: 0 0 15px rgba(37,99,235,0.9);
+            animation: pulseMarker 2s infinite;
+        }
+        @keyframes pulseMarker {
+            0% { box-shadow: 0 0 0 0 rgba(37,99,235, 0.7); }
+            70% { box-shadow: 0 0 0 14px rgba(37,99,235, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(37,99,235, 0); }
+        }
+
+        .arrival-toast {
+            position: absolute; top: 100px; left: 16px; right: 16px;
+            background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); color: #34d399; border-radius: 12px;
+            padding: 12px 16px; font-weight: bold; z-index: 2000; display: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4); text-align: center; border: 2px solid #34d399;
+        }
+        .gps-center-btn {
+            position: absolute; bottom: 185px; right: 16px; z-index: 1000;
+            width: 48px; height: 48px; background: #ffffff; color: #0f172a;
+            border: 1px solid #cbd5e1; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            cursor: pointer; transition: var(--app-transition);
+        }
+        .gps-center-btn:hover { background-color: #f1f5f9; color: var(--app-primary); transform: scale(1.05); }
+
+        .picker-map-container { position: relative; height: 180px; width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #cbd5e1; }
+        #driverPickerMap { height: 100%; width: 100%; }
+        .crosshair-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 999; pointer-events: none; color: #dc2626; font-size: 32px; text-shadow: 0 0 6px #ffffff; }
+        
+        .photo-preview-box {
+            height: 120px; width: 100%; background: #f8fafc; border: 2px dashed #cbd5e1;
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            overflow: hidden; position: relative; cursor: pointer; transition: var(--app-transition);
+        }
+        .photo-preview-box:hover { border-color: var(--app-primary); background: #f1f5f9; }
+        .photo-preview-box img { width: 100%; height: 100%; object-fit: cover; }
+
+        .waypoint-item { cursor: pointer; transition: var(--app-transition); border-radius: 10px !important; margin-bottom: 4px; border: 1px solid #f1f5f9; }
+        .waypoint-item:hover { background-color: #f8fafc; border-color: #e2e8f0; }
+        .waypoint-badge { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: bold; font-size: 0.85rem; }
+        .toast-container-custom { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+    </style>
+</head>
+<body>
+
+<div class="toast-container-custom" id="toastContainer"></div>
+
+<div class="app-shell">
+    <div class="app-header">
+        <div>
+            <div class="text-secondary" style="font-size: 0.68rem; letter-spacing: 0.5px;">EINGELOGGTER FAHRER:</div>
+            <strong class="text-white fs-6" id="lblDriverWelcome">Fahrer</strong>
+        </div>
+        <div>
+            <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="logout()" title="Abmelden">
+                <i class="bi bi-box-arrow-right"></i> Abmelden
+            </button>
+        </div>
+    </div>
+
+    <!-- Menü-Reiter -->
+    <div class="bg-white p-2 border-bottom shadow-sm flex-shrink-0">
+        <div class="btn-group w-100">
+            <button class="btn btn-sm btn-outline-primary active fw-bold py-2" id="btnTabNav" onclick="switchView('nav')">
+                <i class="bi bi-compass-fill me-1"></i>Navigation
+            </button>
+            <button class="btn btn-sm btn-outline-primary fw-bold py-2" id="btnTabTour" onclick="switchView('tour')">
+                <i class="bi bi-list-ol me-1"></i>Tourliste
+            </button>
+            <button class="btn btn-sm btn-outline-success fw-bold py-2" id="btnTabAdd" onclick="switchView('add')">
+                <i class="bi bi-plus-circle-fill me-1"></i>Erfassen
+            </button>
+        </div>
+    </div>
+
+    <!-- 1. NAVIGATION -->
+    <div id="screenNav" class="app-view active">
+        <div class="gmaps-nav-banner">
+            <div class="fs-2 me-3"><i class="bi bi-arrow-up-right-square-fill"></i></div>
+            <div class="flex-grow-1">
+                <h6 class="mb-0 fw-bold fs-6" id="navInstructionText">Ziel ansteuern</h6>
+                <div class="small opacity-90" id="navStreetSubtext">Alleestraße 54</div>
+            </div>
+            <span class="badge bg-dark fs-7 py-1 px-2" id="gpsStatusBadge">Live-GPS 🛰️</span>
+        </div>
+
+        <div class="arrival-toast" id="arrivalToast">
+            <i class="bi bi-check-circle-fill me-1"></i> Korb erreicht (< 40m)! Erfassung öffnet...
+        </div>
+
+        <div id="navMap"></div>
+
+        <button class="gps-center-btn" onclick="centerOnDriver()" title="Auf meinen Standort zentrieren">
+            <i class="bi bi-crosshair fs-4"></i>
+        </button>
+
+        <div class="gmaps-nav-footer">
+            <div class="nav-info-box">
+                <div>
+                    <h5 class="text-primary fw-bold mb-0" id="navStopCode">PB-RS-001</h5>
+                    <div class="text-muted small" id="navStopAddress">Alleestraße 54, Remscheid</div>
+                </div>
+                <div class="text-end">
+                    <div class="fw-bold text-success fs-5 mb-0" id="navDistRemaining">-- m</div>
+                    <div class="text-muted small">Live-Entfernung</div>
+                </div>
+            </div>
+
+            <button class="btn btn-light btn-sm w-100 border fw-bold shadow-sm py-2" onclick="simulateArrival()">
+                <i class="bi bi-geo me-1 text-primary"></i> Heranfahren simulieren (Test-Modus)
+            </button>
+
+            <button class="btn btn-danger btn-sm w-100 fw-bold py-2 shadow" onclick="openEmptyForm()">
+                <i class="bi bi-exclamation-octagon-fill me-1"></i> Zur Erfassung wechseln (Fallback)
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. PAPIERKORB LEEREN -->
+    <div id="screenEmptyForm" class="app-view p-3 bg-white overflow-auto">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <button class="btn btn-sm btn-outline-secondary" onclick="returnToNav()">
+                <i class="bi bi-arrow-left me-1"></i> Zurück zur Karte
+            </button>
+            <span class="badge bg-success py-2 px-3"><i class="bi bi-geo-alt-fill me-1"></i> Vor Ort</span>
+        </div>
+
+        <div class="card border-primary mb-3 shadow-sm rounded-4">
+            <div class="card-header bg-primary text-white small fw-bold d-flex justify-content-between rounded-top-4 py-2">
+                <span>PAPIERKORB LEEREN</span>
+                <span id="formStepBadge">STOPP 1</span>
+            </div>
+            <div class="card-body">
+                <h3 class="text-primary fw-bold mb-0" id="formStopCode">PB-RS-001</h3>
+                <div class="text-muted small mb-2" id="formStopAddress">Alleestraße 54, Remscheid</div>
+                <div class="badge bg-secondary mb-3" id="formStopVolume">Volumen: 50 Liter</div>
+
+                <hr class="my-2">
+
+                <label class="small fw-bold mb-1 text-dark">Füllstand vor der Leerung:</label>
+                <div class="btn-group btn-group-sm w-100 mb-3" role="group">
+                    <input type="radio" class="btn-check" name="fillLvl" id="f25" value="25"><label class="btn btn-outline-secondary py-2" for="f25">25%</label>
+                    <input type="radio" class="btn-check" name="fillLvl" id="f50" value="50" checked><label class="btn btn-outline-secondary py-2" for="f50">50%</label>
+                    <input type="radio" class="btn-check" name="fillLvl" id="f75" value="75"><label class="btn btn-outline-secondary py-2" for="f75">75%</label>
+                    <input type="radio" class="btn-check" name="fillLvl" id="f100" value="100"><label class="btn btn-outline-secondary py-2" for="f100">100%</label>
+                    <input type="radio" class="btn-check" name="fillLvl" id="fOver" value="120"><label class="btn btn-outline-danger py-2" for="fOver">Voll ⚠️</label>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="chkDamage" style="transform: scale(1.2);">
+                    <label class="form-check-label small text-danger fw-bold ms-1" for="chkDamage">Schaden / Vandalismus melden</label>
+                </div>
+
+                <button class="btn btn-success w-100 fw-bold py-3 shadow rounded-3" onclick="submitEmptyAndNext()">
+                    <i class="bi bi-check2-circle fs-5 me-1"></i> Leerung bestätigen & Weiter
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. NEUEN KORB AUFNEHMEN -->
+    <div id="screenAdd" class="app-view p-3 bg-white overflow-auto">
+        <h5 class="fw-bold mb-1 text-dark"><i class="bi bi-plus-circle-fill text-success me-2"></i>Neuen Papierkorb aufnehmen</h5>
+        <p class="small text-muted mb-3">Behälter vor Ort per Foto & Fadenkreuz-GPS erfassen.</p>
+
+        <div class="mb-3">
+            <label class="small fw-bold text-secondary mb-1">1. Foto des Behälters:</label>
+            <div class="photo-preview-box" onclick="document.getElementById('binPhotoInput').click()">
+                <div id="photoPlaceholderText" class="text-center text-muted">
+                    <i class="bi bi-camera-fill fs-2 text-primary d-block mb-1"></i>
+                    <span class="small fw-bold">Foto aufnehmen / wählen</span>
+                </div>
+                <img id="newBinPhotoPreview" class="d-none" alt="Vorschau">
+            </div>
+            <input type="file" accept="image/*" capture="environment" id="binPhotoInput" class="d-none" onchange="previewNewBinPhoto(event)">
+        </div>
+
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="small fw-bold text-secondary mb-0">2. Standort per Fadenkreuz:</label>
+                <button class="btn btn-xs btn-outline-secondary py-0 px-2 small" onclick="togglePickerMapLayer()" id="btnPickerLayerToggle">Satellit</button>
+            </div>
+            <div class="picker-map-container mb-1">
+                <div id="driverPickerMap"></div>
+                <div class="crosshair-overlay"><i class="bi bi-plus-circle-dotted"></i></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center px-1">
+                <span class="small text-muted">GPS: <strong id="mGpsText" class="text-dark">51.1805, 7.1882</strong></span>
+                <button class="btn btn-link btn-sm p-0 text-decoration-none" onclick="centerPickerOnGPS()">
+                    <i class="bi bi-crosshair me-1"></i>Standort
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <label class="small fw-bold text-secondary mb-1">Kennung (ID)</label>
+                <input type="text" class="form-control form-control-sm fw-bold" id="mCode" value="PB-RS-025">
+            </div>
+            <div class="col-6">
+                <label class="small fw-bold text-secondary mb-1">Volumen (Liter)</label>
+                <input type="number" class="form-control form-control-sm" id="mVol" value="80" min="10" max="5000" step="5">
+            </div>
+        </div>
+
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <label class="small fw-bold text-secondary mb-1">Typ</label>
+                <select class="form-select form-select-sm" id="mTyp">
+                    <option value="Standardbehälter" selected>Standard</option>
+                    <option value="Kombination mit Ascher">Mit Ascher</option>
+                    <option value="Großraumbehälter">Großraum</option>
+                </select>
+            </div>
+            <div class="col-6">
+                <label class="small fw-bold text-secondary mb-1">Zustand</label>
+                <select class="form-select form-select-sm" id="mZust">
+                    <option value="Gut / Intakt" selected>Gut / Intakt</option>
+                    <option value="Defekt / Beschädigt">Beschädigt</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <label class="small fw-bold text-secondary mb-1">Straße / Notiz</label>
+            <input type="text" class="form-control form-control-sm" id="mAdr" placeholder="z. B. Alleestraße Höhe Nr. 80">
+        </div>
+
+        <button class="btn btn-success w-100 fw-bold py-3 shadow mb-3 rounded-3" onclick="saveNewBin()">
+            <i class="bi bi-cloud-arrow-up-fill me-2"></i>Papierkorb speichern
+        </button>
+    </div>
+
+    <!-- 4. TOURLISTE -->
+    <div id="screenTour" class="app-view p-3 bg-white overflow-auto">
+        <div class="card border-0 bg-light p-3 mb-3 border rounded-4">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="fw-bold text-dark mb-0" id="lblTourTitle">Tagestour</h6>
+                <span class="badge bg-primary" id="lblTourStatus">Zugewiesen</span>
+            </div>
+            <div class="small text-muted mb-2" id="lblTourDetails">0 Wegpunkte • 0 km</div>
+            <div class="progress rounded-pill" style="height: 8px;">
+                <div class="progress-bar bg-success rounded-pill" id="tourProgressBar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small fw-bold text-secondary">WEGPUNKTE:</span>
+            <button class="btn btn-sm btn-primary px-3 fw-bold rounded-pill" onclick="switchView('nav')">
+                <i class="bi bi-compass me-1"></i> Zur Navigation
+            </button>
+        </div>
+
+        <div class="list-group shadow-sm" id="waypointList"></div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let loggedInUsername = "fahrer1";
+    let activeStopIndex = 0;
+    let driverGps = { lat: 51.1788, lng: 7.1925 };
+    let navMap = null, navRouteLine = null, driverMarker = null, destinationMarker = null;
+    let pickerMap = null, pickerGoogleStreet = null, pickerGoogleSat = null, currentPickerLayer = 'street';
+    let currentNewBinImage = null;
+    let papierkoerbe = [], tourenListe = [];
+    let isFollowingGps = true;
+    let currentActiveView = 'nav';
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toastId = 'toast_' + Date.now();
+        const bgCol = type === 'success' ? 'bg-success text-white' : 'bg-danger text-white';
+        const html = `
+            <div id="${toastId}" class="toast align-items-center ${bgCol} border-0 shadow mb-2" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="d-flex">
+                    <div class="toast-body fw-semibold">${message}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', html);
+        const toastEl = document.getElementById(toastId);
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 3500 });
+        bsToast.show();
+        toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+    }
+
+    async function loadData() {
+        try {
+            const userRes = await fetch('/api/session');
+            const sessionData = await userRes.json();
+            if (!sessionData.loggedIn || !sessionData.user) {
+                window.location.href = 'index.html';
+                return;
+            }
+
+            document.getElementById('lblDriverWelcome').innerText = sessionData.user.name;
+            loggedInUsername = sessionData.user.username.toLowerCase();
+
+            const res = await fetch('/api/data');
+            if (!res.ok) { window.location.href = 'index.html'; return; }
+            const data = await res.json();
+            papierkoerbe = data.bins || [];
+            tourenListe = data.tours || [];
+
+            startRealGpsTracking();
+            initNavigation();
+        } catch (e) {
+            window.location.href = 'index.html';
+        }
+    }
+
+    async function saveData() {
+        await fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ users: [], bins: papierkoerbe, tours: tourenListe })
+        });
+    }
+
+    async function logout() {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = 'index.html';
+    }
+
+    function getMyTour() {
+        return tourenListe.find(t => t.driver && t.driver.toLowerCase().trim() === loggedInUsername);
+    }
+
+    function startRealGpsTracking() {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    driverGps.lat = position.coords.latitude;
+                    driverGps.lng = position.coords.longitude;
+                    
+                    document.getElementById('gpsStatusBadge').innerText = "Live-GPS aktiv 🛰️";
+                    document.getElementById('gpsStatusBadge').className = "badge bg-success fs-7 py-1 px-2";
+
+                    if (navMap && driverMarker) {
+                        driverMarker.setLatLng([driverGps.lat, driverGps.lng]);
+                        if (isFollowingGps && currentActiveView === 'nav') {
+                            navMap.setView([driverGps.lat, driverGps.lng], 18, { animate: true });
+                        }
+                    }
+
+                    const tour = getMyTour();
+                    if (tour && tour.stops && activeStopIndex < tour.stops.length) {
+                        checkDistanceAndAutoSwitch(tour.stops[activeStopIndex]);
+                    }
+                },
+                (error) => {
+                    console.warn("GPS-Zugriff:", error.message);
+                    document.getElementById('gpsStatusBadge').innerText = "GPS-Simuliert ⚠️";
+                    document.getElementById('gpsStatusBadge').className = "badge bg-warning text-dark fs-7 py-1 px-2";
+                },
+                { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+            );
+        }
+    }
+
+    function centerOnDriver() {
+        isFollowingGps = true;
+        if (navMap) {
+            navMap.setView([driverGps.lat, driverGps.lng], 18, { animate: true });
+        }
+    }
+
+    function initNavigation() {
+        const tour = getMyTour();
+        if (!tour || !tour.stops || activeStopIndex >= tour.stops.length) {
+            document.getElementById('screenNav').innerHTML = `
+                <div class="p-5 text-center flex-grow-1 bg-white d-flex flex-column justify-content-center align-items-center">
+                    <i class="bi bi-trophy-fill text-warning display-2 mb-3"></i>
+                    <h4 class="fw-bold">Tagestour beendet!</h4>
+                    <p class="text-muted small mb-4">Alle zugewiesenen Papierkörbe wurden erfolgreich angefahren.</p>
+                    <button class="btn btn-primary fw-bold px-4 py-2 rounded-pill shadow" onclick="restartTour()">Tour neu starten</button>
+                </div>`;
+            return;
+        }
+
+        const targetStop = tour.stops[activeStopIndex];
+        document.getElementById('navStopCode').innerText = targetStop.code;
+        document.getElementById('navStopAddress').innerText = targetStop.adr + ", Remscheid";
+        document.getElementById('navStreetSubtext').innerText = targetStop.adr;
+
+        if (!navMap) {
+            navMap = L.map('navMap', { zoomControl: false }).setView([driverGps.lat, driverGps.lng], 18);
+            L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                maxZoom: 21, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps'
+            }).addTo(navMap);
+
+            navMap.on('dragstart', () => { isFollowingGps = false; });
+        }
+
+        if (driverMarker) navMap.removeLayer(driverMarker);
+        driverMarker = L.marker([driverGps.lat, driverGps.lng], {
+            icon: L.divIcon({ className: '', html: '<div class="driver-marker-pulse"></div>' })
+        }).addTo(navMap);
+
+        if (destinationMarker) navMap.removeLayer(destinationMarker);
+        destinationMarker = L.marker([targetStop.lat, targetStop.lng], {
+            icon: L.divIcon({ className: '', html: '<div style="background:#dc2626; color:white; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; border:2px solid white; box-shadow:0 3px 6px rgba(0,0,0,0.4);"><i class="bi bi-trash3-fill"></i></div>' })
+        }).addTo(navMap);
+
+        drawRoadRoute(driverGps, targetStop);
+        checkDistanceAndAutoSwitch(targetStop);
+
+        if (isFollowingGps) {
+            navMap.setView([driverGps.lat, driverGps.lng], 18, { animate: true });
+        }
+
+        setTimeout(() => navMap.invalidateSize(), 200);
+    }
+
+    async function drawRoadRoute(start, end) {
+        const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.routes && data.routes.length > 0) {
+                if (navRouteLine) navMap.removeLayer(navRouteLine);
+                navRouteLine = L.geoJSON(data.routes[0].geometry, { style: { color: '#2563eb', weight: 6, opacity: 0.85 } }).addTo(navMap);
+            }
+        } catch(e) {
+            if (navRouteLine) navMap.removeLayer(navRouteLine);
+            navRouteLine = L.polyline([[start.lat, start.lng], [end.lat, end.lng]], { color: '#2563eb', weight: 5 }).addTo(navMap);
+        }
+    }
+
+    function checkDistanceAndAutoSwitch(stop) {
+        const dist = calculateDistanceMeters(driverGps.lat, driverGps.lng, stop.lat, stop.lng);
+        document.getElementById('navDistRemaining').innerText = dist + " m";
+
+        if (dist <= 40) {
+            const toast = document.getElementById('arrivalToast');
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+                openEmptyForm();
+            }, 900);
+        }
+    }
+
+    function simulateArrival() {
+        const tour = getMyTour();
+        if (!tour || !tour.stops[activeStopIndex]) return;
+        const stop = tour.stops[activeStopIndex];
+        driverGps.lat = stop.lat + 0.0001;
+        driverGps.lng = stop.lng + 0.0001;
+        isFollowingGps = true;
+        initNavigation();
+    }
+
+    function openEmptyForm() {
+        currentActiveView = 'empty';
+        updateActiveViewClass();
+        const tour = getMyTour();
+        if (!tour || !tour.stops[activeStopIndex]) return;
+        const stop = tour.stops[activeStopIndex];
+
+        document.getElementById('formStepBadge').innerText = `STOPP ${activeStopIndex + 1} VON ${tour.stops.length}`;
+        document.getElementById('formStopCode').innerText = stop.code;
+        document.getElementById('formStopAddress').innerText = stop.adr + ", Remscheid";
+        document.getElementById('formStopVolume').innerText = `Volumen: ${stop.vol} Liter • Zustand: ${stop.zustand}`;
+    }
+
+    function returnToNav() { isFollowingGps = true; switchView('nav'); }
+
+    async function submitEmptyAndNext() {
+        const tour = getMyTour();
+        const stop = tour.stops[activeStopIndex];
+
+        const fill = parseInt(document.querySelector('input[name="fillLvl"]:checked').value);
+        stop.gesammelt = (stop.gesammelt || 0) + Math.round((stop.vol * fill) / 100);
+        stop.leerung = "Heute " + new Date().toLocaleTimeString().slice(0, 5);
+        stop.geleertHeute = true;
+
+        if (document.getElementById('chkDamage').checked) stop.zustand = "Defekt / Beschädigt";
+
+        activeStopIndex++;
+        tour.prozent = Math.round((activeStopIndex / tour.stops.length) * 100);
+        tour.status = (tour.prozent >= 100) ? "Abgeschlossen" : "In Arbeit";
+
+        await saveData();
+        showToast(`Leerung für ${stop.code} gespeichert!`);
+        document.getElementById('chkDamage').checked = false;
+        isFollowingGps = true;
+        switchView('nav');
+    }
+
+    function initPickerMap() {
+        if (pickerMap) {
+            setTimeout(() => pickerMap.invalidateSize(), 150);
+            return;
+        }
+        pickerMap = L.map('driverPickerMap', { zoomControl: false }).setView([driverGps.lat, driverGps.lng], 17);
+        pickerGoogleStreet = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] }).addTo(pickerMap);
+        pickerGoogleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 21, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] });
+
+        pickerMap.on('move', function() {
+            const c = pickerMap.getCenter();
+            document.getElementById('mGpsText').innerText = `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+        });
+
+        const nextId = papierkoerbe.length + 1;
+        document.getElementById('mCode').value = "PB-RS-" + (nextId < 10 ? "00" + nextId : nextId);
+    }
+
+    function togglePickerMapLayer() {
+        const btn = document.getElementById('btnPickerLayerToggle');
+        if (currentPickerLayer === 'street') {
+            currentPickerLayer = 'sat';
+            pickerMap.removeLayer(pickerGoogleStreet);
+            pickerMap.addLayer(pickerGoogleSat);
+            btn.innerText = "Karte";
+        } else {
+            currentPickerLayer = 'street';
+            pickerMap.removeLayer(pickerGoogleSat);
+            pickerMap.addLayer(pickerGoogleStreet);
+            btn.innerText = "Satellit";
+        }
+    }
+
+    function centerPickerOnGPS() {
+        if (pickerMap) pickerMap.setView([driverGps.lat, driverGps.lng], 18, { animate: true });
+    }
+
+    function previewNewBinPhoto(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentNewBinImage = e.target.result;
+                const img = document.getElementById('newBinPhotoPreview');
+                img.src = currentNewBinImage;
+                img.classList.remove('d-none');
+                document.getElementById('photoPlaceholderText').classList.add('d-none');
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    async function saveNewBin() {
+        const center = pickerMap ? pickerMap.getCenter() : { lat: driverGps.lat, lng: driverGps.lng };
+        const code = document.getElementById('mCode').value.trim() || ("PB-RS-" + Date.now().toString().slice(-4));
+        const vol = parseInt(document.getElementById('mVol').value) || 80;
+        const typ = document.getElementById('mTyp').value;
+        const zust = document.getElementById('mZust').value;
+        const adr = document.getElementById('mAdr').value.trim() || "Standort";
+
+        papierkoerbe.push({
+            id: Date.now(),
+            code: code,
+            lat: parseFloat(center.lat.toFixed(5)),
+            lng: parseFloat(center.lng.toFixed(5)),
+            vol: vol,
+            typ: typ,
+            zustand: zust,
+            adr: adr,
+            geleertHeute: false,
+            gesammelt: 0
+        });
+
+        await saveData();
+        showToast(`Papierkorb ${code} erfolgreich im Kataster gespeichert!`);
+        document.getElementById('mAdr').value = '';
+        isFollowingGps = true;
+        switchView('nav');
+    }
+
+    function renderTourList() {
+        const tour = getMyTour();
+        const list = document.getElementById('waypointList');
+        list.innerHTML = '';
+
+        if (!tour || !tour.stops || tour.stops.length === 0) {
+            document.getElementById('lblTourTitle').innerText = "Keine Tour";
+            document.getElementById('lblTourDetails').innerText = `Warte auf Zuteilung für [${loggedInUsername}]...`;
+            list.innerHTML = `<div class="p-4 text-center text-muted small"><i class="bi bi-clock-history fs-3 d-block mb-2"></i>Keine Tour zugewiesen.</div>`;
+            return;
+        }
+
+        document.getElementById('lblTourTitle').innerText = tour.name;
+        document.getElementById('lblTourDetails').innerText = `${tour.stops.length} Wegpunkte • ${tour.km} • ${tour.dauer}`;
+        document.getElementById('lblTourStatus').innerText = tour.status;
+        document.getElementById('tourProgressBar').style.width = `${tour.prozent}%`;
+
+        tour.stops.forEach((bin, idx) => {
+            const isDone = idx < activeStopIndex;
+            const isCur = idx === activeStopIndex;
+            const item = document.createElement('a');
+            item.className = `list-group-item list-group-item-action waypoint-item d-flex align-items-center justify-content-between p-2 ${isCur ? 'border-primary bg-light' : ''}`;
+            item.onclick = () => { activeStopIndex = idx; isFollowingGps = true; switchView('nav'); };
+
+            item.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <span class="waypoint-badge me-2 ${isDone ? 'bg-success text-white' : (isCur ? 'bg-primary text-white' : 'bg-secondary text-white')}">
+                        ${isDone ? '<i class="bi bi-check"></i>' : (idx + 1)}
+                    </span>
+                    <div>
+                        <div class="fw-bold small text-dark">${bin.code}</div>
+                        <div class="text-muted" style="font-size: 0.78rem;">${bin.adr}</div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-light text-dark border">${bin.vol}L</span>
+                    ${isDone ? '<div class="text-success small fw-bold mt-1">Geleert</div>' : (isCur ? '<div class="text-primary small fw-bold mt-1">Aktiv</div>' : '')}
+                </div>`;
+            list.appendChild(item);
+        });
+    }
+
+    function switchView(view) {
+        currentActiveView = view;
+        updateActiveViewClass();
+
+        document.getElementById('btnTabNav').className = view === 'nav' ? 'btn btn-sm btn-outline-primary active fw-bold py-2' : 'btn btn-sm btn-outline-primary fw-bold py-2';
+        document.getElementById('btnTabTour').className = view === 'tour' ? 'btn btn-sm btn-outline-primary active fw-bold py-2' : 'btn btn-sm btn-outline-primary fw-bold py-2';
+        document.getElementById('btnTabAdd').className = view === 'add' ? 'btn btn-sm btn-outline-success active fw-bold py-2' : 'btn btn-sm btn-outline-success fw-bold py-2';
+
+        if (view === 'nav') initNavigation();
+        if (view === 'tour') renderTourList();
+        if (view === 'add') initPickerMap();
+    }
+
+    function updateActiveViewClass() {
+        document.getElementById('screenNav').className = `app-view ${currentActiveView === 'nav' ? 'active' : ''}`;
+        document.getElementById('screenEmptyForm').className = `app-view ${currentActiveView === 'empty' ? 'active' : ''}`;
+        document.getElementById('screenAdd').className = `app-view ${currentActiveView === 'add' ? 'active' : ''}`;
+        document.getElementById('screenTour').className = `app-view ${currentActiveView === 'tour' ? 'active' : ''}`;
+    }
+
+    function restartTour() {
+        activeStopIndex = 0;
+        const t = getMyTour();
+        if (t) { t.prozent = 0; t.status = "Zugewiesen"; }
+        saveData();
+        isFollowingGps = true;
+        switchView('nav');
+    }
+
+    function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371e3, φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180, Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+
+    window.onload = loadData;
+</script>
+</body>
+</html>
